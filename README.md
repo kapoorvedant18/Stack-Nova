@@ -9,14 +9,26 @@ git clone <YOUR_GIT_URL>
 # Step 2: Navigate to the project directory.
 cd <YOUR_PROJECT_NAME>
 
-# Step 3: Install the necessary dependencies.
+# Step 3: Create a local environment file.
+# Windows (PowerShell)
+Copy-Item .env.example .env
+
+# macOS/Linux
+cp .env.example .env
+
+# Step 4: Fill values in .env
+# - VITE_SUPABASE_URL
+# - VITE_SUPABASE_PUBLISHABLE_KEY
+# - DATABASE_URL (optional if running without DB)
+
+# Step 5: Install the necessary dependencies.
 npm i
 
-# Step 4: Start the frontend server with auto-reloading and an instant preview.
+# Step 6: Start the frontend server with auto-reloading and an instant preview.
 npm run dev
 
-# Step 5: Start both frontend +backend at the same time.
-npm run dev
+# Step 7: Start both frontend + backend at the same time.
+npm run start
 ```
 
 **Use GitHub Codespaces**
