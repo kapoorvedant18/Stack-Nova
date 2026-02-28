@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
-import { api } from "@/lib/api";
+import { api, type MSCalendarEvent } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight, Circle, CalendarDays } from "lucide-react";
@@ -16,21 +16,10 @@ import {
 } from "date-fns";
 import { toast } from "sonner";
 
-interface MSEvent {
-  id: string;
-  subject: string;
-  start: { dateTime: string; timeZone: string };
-  end: { dateTime: string; timeZone: string };
-  isAllDay: boolean;
-  bodyPreview: string;
-  webLink: string;
-  location?: { displayName: string };
-}
-
 export default function CalendarPage() {
-  const { user, session, msProviderToken } = useAuth();
+  const { user, msProviderToken, clearMsProviderToken } = useAuth();
   const [tasks, setTasks] = useState<any[]>([]);
-  const [msEvents, setMsEvents] = useState<MSEvent[]>([]);
+  const [msEvents, setMsEvents] = useState<MSCalendarEvent[]>([]);
   const [loadingMs, setLoadingMs] = useState(false);
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
@@ -41,32 +30,62 @@ export default function CalendarPage() {
     api.tasks.list().then((data) => setTasks(data || [])).catch(console.error);
   }, [user]);
 
-  // Fetch Microsoft Calendar events whenever the month or token changes
-  useEffect(() => {
-    if (!user || !msProviderToken || !session) return;
+  const loadMicrosoftEvents = useCallback(async () => {
+    if (!user || !msProviderToken) return;
 
     const year = currentMonth.getFullYear();
     const month = currentMonth.getMonth() + 1;
 
     setLoadingMs(true);
 
-    fetch(`/api/ms-calendar/events?year=${year}&month=${month}`, {
-      headers: {
-        Authorization: `Bearer ${session.access_token}`,
-        "X-Provider-Token": msProviderToken,
-      },
-    })
-      .then((res) => {
-        if (!res.ok) return res.json().then((e: any) => { throw new Error(e.error ?? "Failed") });
-        return res.json();
-      })
-      .then(({ events }) => setMsEvents(events ?? []))
-      .catch((err: Error) => {
-        console.error("[CalendarPage] MS Calendar error:", err.message);
-        toast.error("Could not load Microsoft Calendar events.");
-      })
-      .finally(() => setLoadingMs(false));
-  }, [user, session, msProviderToken, currentMonth]);
+    try {
+      const { events } = await api.calendar.listMicrosoftMonthEvents({
+        year,
+        month,
+        providerToken: msProviderToken,
+      });
+      setMsEvents(events ?? []);
+    } catch (err) {
+      const error = err as Error;
+      console.error("[CalendarPage] MS Calendar error:", error.message);
+
+      if (
+        error.message.includes("Missing X-Provider-Token") ||
+        error.message.includes("invalid or expired")
+      ) {
+        clearMsProviderToken();
+        toast.error("Microsoft calendar session expired. Please sign in with Microsoft again.");
+        return;
+      }
+
+      toast.error("Could not load Microsoft Calendar events.");
+    } finally {
+      setLoadingMs(false);
+    }
+  }, [user, msProviderToken, currentMonth, clearMsProviderToken]);
+
+  useEffect(() => {
+    loadMicrosoftEvents();
+  }, [loadMicrosoftEvents]);
+
+  useEffect(() => {
+    if (!user || !msProviderToken) return;
+    const intervalId = window.setInterval(loadMicrosoftEvents, 60000);
+    return () => window.clearInterval(intervalId);
+  }, [user, msProviderToken, loadMicrosoftEvents]);
+
+  useEffect(() => {
+    if (!user || !msProviderToken) return;
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        loadMicrosoftEvents();
+      }
+    };
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
+  }, [user, msProviderToken, loadMicrosoftEvents]);
 
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
