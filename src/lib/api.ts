@@ -1,5 +1,16 @@
 import { supabase } from "@/integrations/supabase/client";
 
+export interface MSCalendarEvent {
+  id: string;
+  subject: string;
+  start: { dateTime: string; timeZone: string };
+  end: { dateTime: string; timeZone: string };
+  isAllDay: boolean;
+  bodyPreview: string;
+  webLink: string;
+  location?: { displayName: string };
+}
+
 async function getAuthHeader(): Promise<Record<string, string>> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.access_token) return {};
@@ -24,6 +35,17 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
 }
 
 export const api = {
+  calendar: {
+    listMicrosoftMonthEvents: (params: { year: number; month: number; providerToken: string }) =>
+      apiFetch<{ events: MSCalendarEvent[] }>(
+        `/ms-calendar/events?year=${params.year}&month=${params.month}`,
+        {
+          headers: {
+            "X-Provider-Token": params.providerToken,
+          },
+        }
+      ),
+  },
   projects: {
     list: () => apiFetch<any[]>("/projects"),
     create: (data: any) => apiFetch<any>("/projects", { method: "POST", body: JSON.stringify(data) }),

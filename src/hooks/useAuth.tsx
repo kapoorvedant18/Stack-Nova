@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from "react";
 import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -9,6 +9,7 @@ interface AuthContextType {
   session: Session | null;
   loading: boolean;
   msProviderToken: string | null;
+  clearMsProviderToken: () => void;
   signOut: () => Promise<void>;
 }
 
@@ -17,6 +18,7 @@ const AuthContext = createContext<AuthContextType>({
   session: null,
   loading: true,
   msProviderToken: null,
+  clearMsProviderToken: () => {},
   signOut: async () => {},
 });
 
@@ -29,17 +31,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.getItem(MS_TOKEN_KEY)
   );
 
-  const saveMsToken = (token: string | null | undefined, provider?: string) => {
+  const clearMsToken = useCallback(() => {
+    localStorage.removeItem(MS_TOKEN_KEY);
+    setMsProviderToken(null);
+  }, []);
+
+  const syncMsToken = useCallback((token: string | null | undefined, provider?: string) => {
     if (token && provider === "azure") {
       localStorage.setItem(MS_TOKEN_KEY, token);
       setMsProviderToken(token);
+      return;
     }
-  };
 
-  const clearMsToken = () => {
-    localStorage.removeItem(MS_TOKEN_KEY);
-    setMsProviderToken(null);
-  };
+    clearMsToken();
+  }, [clearMsToken]);
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -49,7 +54,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setLoading(false);
 
         if (event === "SIGNED_IN") {
-          saveMsToken(session?.provider_token, session?.user?.app_metadata?.provider);
+          syncMsToken(session?.provider_token, session?.user?.app_metadata?.provider);
         }
         if (event === "SIGNED_OUT") {
           clearMsToken();
@@ -62,11 +67,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(session?.user ?? null);
       setLoading(false);
       // Capture token right after redirect back from Microsoft
-      saveMsToken(session?.provider_token, session?.user?.app_metadata?.provider);
+      syncMsToken(session?.provider_token, session?.user?.app_metadata?.provider);
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [syncMsToken, clearMsToken]);
 
   const signOut = async () => {
     clearMsToken();
@@ -74,7 +79,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, loading, msProviderToken, signOut }}>
+    <AuthContext.Provider value={{ user, session, loading, msProviderToken, clearMsProviderToken: clearMsToken, signOut }}>
       {children}
     </AuthContext.Provider>
   );
