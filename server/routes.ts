@@ -1,8 +1,10 @@
 import { Router, Request, Response } from "express";
 import { storage } from "./storage";
 import { insertProjectSchema, insertTaskSchema, insertNoteSchema, insertLinkSchema } from "../shared/schema";
-
+import msCalendarRouter from "../backend/routes/routemsCalendar";
 const router = Router();
+router.use("/ms-calendar", msCalendarRouter);
+
 
 function getUserId(req: Request): string | null {
   return (req as any).userId ?? null;
@@ -36,7 +38,7 @@ router.patch("/projects/:id", async (req: Request, res: Response) => {
   const userId = getUserId(req);
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
   try {
-    const project = await storage.updateProject(req.params.id, userId, req.body);
+    const project = await storage.updateProject(req.params.id as string, userId, req.body);
     if (!project) return res.status(404).json({ error: "Not found" });
     res.json(project);
   } catch (e) {
@@ -48,7 +50,7 @@ router.delete("/projects/:id", async (req: Request, res: Response) => {
   const userId = getUserId(req);
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
   try {
-    const ok = await storage.deleteProject(req.params.id, userId);
+    const ok = await storage.deleteProject(req.params.id as string, userId);
     if (!ok) return res.status(404).json({ error: "Not found" });
     res.json({ success: true });
   } catch (e) {
@@ -84,7 +86,7 @@ router.patch("/tasks/:id", async (req: Request, res: Response) => {
   const userId = getUserId(req);
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
   try {
-    const task = await storage.updateTask(req.params.id, userId, req.body);
+    const task = await storage.updateTask(req.params.id as string, userId, req.body);
     if (!task) return res.status(404).json({ error: "Not found" });
     res.json(task);
   } catch (e) {
@@ -96,7 +98,7 @@ router.delete("/tasks/:id", async (req: Request, res: Response) => {
   const userId = getUserId(req);
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
   try {
-    const ok = await storage.deleteTask(req.params.id, userId);
+    const ok = await storage.deleteTask(req.params.id as string, userId);
     if (!ok) return res.status(404).json({ error: "Not found" });
     res.json({ success: true });
   } catch (e) {
@@ -132,7 +134,7 @@ router.patch("/notes/:id", async (req: Request, res: Response) => {
   const userId = getUserId(req);
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
   try {
-    const note = await storage.updateNote(req.params.id, userId, req.body);
+    const note = await storage.updateNote(req.params.id as string, userId, req.body);
     if (!note) return res.status(404).json({ error: "Not found" });
     res.json(note);
   } catch (e) {
@@ -144,7 +146,7 @@ router.delete("/notes/:id", async (req: Request, res: Response) => {
   const userId = getUserId(req);
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
   try {
-    const ok = await storage.deleteNote(req.params.id, userId);
+    const ok = await storage.deleteNote(req.params.id as string, userId);
     if (!ok) return res.status(404).json({ error: "Not found" });
     res.json({ success: true });
   } catch (e) {
@@ -180,7 +182,7 @@ router.delete("/links/:id", async (req: Request, res: Response) => {
   const userId = getUserId(req);
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
   try {
-    const ok = await storage.deleteLink(req.params.id, userId);
+    const ok = await storage.deleteLink(req.params.id as string, userId);
     if (!ok) return res.status(404).json({ error: "Not found" });
     res.json({ success: true });
   } catch (e) {
