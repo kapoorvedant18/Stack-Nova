@@ -42,8 +42,7 @@ export default function Emails() {
     }
   }, []);
 
-  // Full sync + fetch — used only on initial mount
-  const load = useCallback(async () => {
+  const runProviderSync = useCallback(async () => {
     try {
       const syncCalls: Array<Promise<unknown>> = [];
 
@@ -71,18 +70,18 @@ export default function Emails() {
       }
 
       await fetchEmails();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to load emails";
-      toast.error(message);
+    } catch {
+      // keep page responsive if provider sync fails
     }
   }, [googleProviderToken, msProviderToken, fetchEmails]);
 
   useEffect(() => {
     if (!user) return;
-    load(); // full sync on mount
+    fetchEmails();
+    runProviderSync();
 
-    // Lightweight poll every 30s — just re-fetches from DB, no provider sync
     const interval = window.setInterval(fetchEmails, 30000);
+    const syncInterval = window.setInterval(runProviderSync, 180000);
 
     // Stay in sync with the Dashboard tab
     const unsubDeleted = emailEvents.onDeleted((id) => {
@@ -94,10 +93,11 @@ export default function Emails() {
 
     return () => {
       window.clearInterval(interval);
+      window.clearInterval(syncInterval);
       unsubDeleted();
       unsubRefresh();
     };
-  }, [load, fetchEmails]);
+  }, [user, fetchEmails, runProviderSync]);
 
   const resetForm = () => {
     setEditId(null);

@@ -22,6 +22,15 @@ interface DashboardMeeting { id: string; title: string; startAt: string;  catego
 interface DashboardEmail   { id: string; subject: string; sender: string; category?: string; tags?: string; }
 interface DashboardNote    { id: string; title: string; category?: string; }
 
+// Parse comma-separated tags into an array, filter empty strings
+function parseTags(tagsStr?: string): string[] {
+  if (!tagsStr) return [];
+  return tagsStr
+    .split(",")
+    .map((tag) => tag.trim())
+    .filter((tag) => tag.length > 0);
+}
+
 // Masonry layout with a pinned item.
 // The child with data-pin="top-right" is always placed at the top of the
 // right column; every other child flows into whichever column is shortest.
@@ -126,10 +135,8 @@ export default function Dashboard() {
     }
   }, []);
 
-  // Full sync + fetch — runs on mount and every 60s
-  const load = useCallback(async () => {
+  const runProviderSync = useCallback(async () => {
     try {
-      setError(null);
       const now = new Date();
       const syncCalls: Array<Promise<unknown>> = [];
       if (msProviderToken) {
@@ -139,22 +146,26 @@ export default function Dashboard() {
       if (googleProviderToken) {
         syncCalls.push(api.sync.googleWorkspace({ year: now.getFullYear(), month: now.getMonth() + 1, providerToken: googleProviderToken }));
       }
-      if (syncCalls.length > 0) await Promise.allSettled(syncCalls);
-      const data = await api.dashboard.summary();
-      setSummary(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load dashboard");
-    } finally {
-      setLoading(false);
+      if (syncCalls.length === 0) return;
+      await Promise.allSettled(syncCalls);
+      await fetchSummary();
+    } catch {
+      // keep dashboard responsive even if provider sync fails
     }
-  }, [msProviderToken, googleProviderToken]);
+  }, [msProviderToken, googleProviderToken, fetchSummary]);
 
   useEffect(() => {
     if (!user) return;
-    load();
-    const interval = window.setInterval(load, 60000);
-    return () => window.clearInterval(interval);
-  }, [user, load]);
+    fetchSummary();
+    runProviderSync();
+
+    const refreshInterval = window.setInterval(fetchSummary, 30000);
+    const syncInterval = window.setInterval(runProviderSync, 180000);
+    return () => {
+      window.clearInterval(refreshInterval);
+      window.clearInterval(syncInterval);
+    };
+  }, [user, fetchSummary, runProviderSync]);
 
   // Stay in sync with the Emails tab
   useEffect(() => {
@@ -282,7 +293,14 @@ export default function Dashboard() {
                   <div className="min-w-0">
                     <p className="text-sm font-medium truncate">{e.subject}</p>
                     <p className="text-xs text-muted-foreground truncate">{e.sender}</p>
-                    {e.category && <Badge variant="secondary" className="mt-1">{e.category}</Badge>}
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {e.category && <Badge variant="secondary">{e.category}</Badge>}
+                      {parseTags(e.tags).map((tag) => (
+                        <Badge key={tag} variant="outline" className="text-xs">
+                          {tag}
+                        </Badge>
+                      ))}
+                    </div>
                   </div>
                   <Button
                     size="icon"
