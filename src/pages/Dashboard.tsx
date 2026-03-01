@@ -34,6 +34,7 @@ interface DashboardEmail {
   subject: string;
   sender: string;
   category?: string;
+  tags?: string;
 }
 
 interface DashboardNote {
@@ -176,7 +177,12 @@ export default function Dashboard() {
                 <div key={email.id} className="rounded-md border p-2">
                   <p className="text-sm font-medium">{email.subject}</p>
                   <p className="text-xs text-muted-foreground">{email.sender}</p>
-                  <Badge variant="secondary" className="mt-1">{email.category}</Badge>
+                  <div className="mt-1 flex gap-1 flex-wrap">
+                    {email.category && <Badge variant="secondary">{email.category}</Badge>}
+                    {email.tags?.split(",").map((tag) => tag.trim()).filter(Boolean).map((tag) => (
+                      <Badge key={`${email.id}-${tag}`} variant="outline">#{tag}</Badge>
+                    ))}
+                  </div>
                 </div>
               ))
             )}
