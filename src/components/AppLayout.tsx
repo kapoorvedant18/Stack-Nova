@@ -36,11 +36,11 @@ export function AppLayout() {
 
   return (
     <SidebarProvider>
-      <div className="min-h-screen flex w-full">
+      <div className="min-h-screen flex w-full bg-transparent">
         <AppSidebar />
-        <div className="flex-1 flex flex-col min-w-0">
-          <header className="h-14 flex items-center justify-between border-b bg-card px-4">
-            <SidebarTrigger />
+        <div className="relative flex-1 flex min-w-0 flex-col">
+          <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-border/70 bg-background/70 px-4 backdrop-blur-xl md:px-6">
+            <SidebarTrigger className="h-9 w-9 rounded-xl border border-border/70 bg-card/80" />
 
             {showConnectButton && (
               <div className="relative group">
@@ -48,7 +48,7 @@ export function AppLayout() {
                   variant="ghost"
                   size="icon"
                   onClick={handleConnectMicrosoft}
-                  className="h-8 w-8"
+                  className="h-9 w-9 rounded-xl border border-border/70 bg-card/80"
                 >
                   <MicrosoftIcon />
                 </Button>
@@ -60,7 +60,7 @@ export function AppLayout() {
 
             {msProviderToken && (
               <div className="relative group">
-                <span className="flex h-8 w-8 items-center justify-center opacity-50">
+                <span className="flex h-9 w-9 items-center justify-center rounded-xl border border-border/70 bg-card/80 opacity-70">
                   <MicrosoftIcon />
                 </span>
                 <div className="pointer-events-none absolute right-0 top-10 z-50 whitespace-nowrap rounded-md bg-popover px-2.5 py-1.5 text-xs text-popover-foreground shadow-md opacity-0 group-hover:opacity-100 transition-opacity duration-150">
@@ -69,8 +69,12 @@ export function AppLayout() {
               </div>
             )}
           </header>
-          <main className="flex-1 overflow-auto p-4 md:p-6">
-            <Outlet />
+          <main className="relative flex-1 overflow-auto">
+            <div className="pointer-events-none absolute left-0 top-0 -z-10 h-56 w-56 rounded-full bg-primary/10 blur-3xl" />
+            <div className="pointer-events-none absolute bottom-0 right-10 -z-10 h-56 w-56 rounded-full bg-accent/10 blur-3xl" />
+            <div className="mx-auto w-full max-w-7xl p-4 md:p-8">
+              <Outlet />
+            </div>
           </main>
         </div>
       </div>

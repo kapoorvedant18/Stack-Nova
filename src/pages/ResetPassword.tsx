@@ -34,10 +34,12 @@ export default function ResetPassword() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background p-4">
+      <div className="pointer-events-none absolute left-0 top-0 h-64 w-64 rounded-full bg-primary/15 blur-3xl" />
+      <div className="pointer-events-none absolute bottom-0 right-0 h-72 w-72 rounded-full bg-accent/15 blur-3xl" />
+      <Card className="relative w-full max-w-md border-border/70 shadow-xl">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl">Set new password</CardTitle>
+          <CardTitle className="text-2xl tracking-tight">Set new password</CardTitle>
           <CardDescription>Enter your new password below</CardDescription>
         </CardHeader>
         <CardContent>
@@ -46,10 +48,10 @@ export default function ResetPassword() {
               <Label htmlFor="password">New Password</Label>
               <div className="relative">
                 <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                <Input id="password" type="password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} className="pl-9" minLength={6} required />
+                <Input id="password" type="password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} className="h-11 rounded-xl pl-9" minLength={6} required />
               </div>
             </div>
-            <Button type="submit" className="w-full" disabled={loading}>
+            <Button type="submit" className="h-11 w-full rounded-xl" disabled={loading}>
               {loading ? "Updating..." : "Update password"}
             </Button>
           </form>
