@@ -3,7 +3,8 @@ import { useAuth } from "@/hooks/useAuth";
 import { api, type CalendarEventRecord } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ChevronLeft, ChevronRight, Circle, CalendarDays } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { ChevronLeft, ChevronRight, Circle, CalendarDays, Plus, X, Loader2 } from "lucide-react";
 import {
   format,
   startOfMonth,
@@ -30,6 +31,9 @@ export default function CalendarPage() {
   const [loadingMs, setLoadingMs] = useState(false);
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [addingEvent, setAddingEvent] = useState(false);
+  const [newEvent, setNewEvent] = useState({ title: "", startTime: "09:00", endTime: "10:00", location: "" });
 
   // Fetch internal tasks
   useEffect(() => {
@@ -138,13 +142,52 @@ export default function CalendarPage() {
   const selectedTasks = selectedDate ? tasksForDay(selectedDate) : [];
   const selectedCalendarEvents = selectedDate ? allEventsForDay(selectedDate) : [];
 
+  const resetAddForm = () => {
+    setNewEvent({ title: "", startTime: "09:00", endTime: "10:00", location: "" });
+    setShowAddForm(false);
+  };
+
+  const handleAddEvent = async () => {
+    if (!selectedDate || !newEvent.title.trim()) return;
+    setAddingEvent(true);
+    try {
+      const dateStr = format(selectedDate, "yyyy-MM-dd");
+      const startAt = new Date(`${dateStr}T${newEvent.startTime}:00`).toISOString();
+      const endAt = new Date(`${dateStr}T${newEvent.endTime}:00`).toISOString();
+
+      await api.calendarEvents.create({
+        title: newEvent.title.trim(),
+        description: "",
+        location: newEvent.location.trim(),
+        isAllDay: false,
+        startAt,
+        endAt,
+        provider: "manual",
+        externalId: `manual-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        source: "Manual",
+        category: "Personal",
+        tags: "",
+      });
+
+      resetAddForm();
+      const rows = await api.calendarEvents.list();
+      setCalendarEvents(rows || []);
+      toast.success("Event added!");
+    } catch (err) {
+      console.error("[CalendarPage] Failed to add event:", err);
+      toast.error("Failed to add event.");
+    } finally {
+      setAddingEvent(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">Calendar</h1>
         {loadingMs && (
           <span className="text-xs text-muted-foreground animate-pulse">
-            Syncing Microsoft Calendar…
+            Syncing Calendar…
           </span>
         )}
       </div>
@@ -178,7 +221,7 @@ export default function CalendarPage() {
                 return (
                   <button
                     key={day.toISOString()}
-                    onClick={() => setSelectedDate(day)}
+                    onClick={() => { setSelectedDate(day); resetAddForm(); }}
                     className={`flex flex-col items-center gap-0.5 rounded-lg p-2 text-sm transition-colors hover:bg-muted
                       ${isSelected ? "bg-primary text-primary-foreground hover:bg-primary/90" : ""}
                       ${isToday && !isSelected ? "font-bold text-primary" : ""}
@@ -230,7 +273,7 @@ export default function CalendarPage() {
                 {selectedCalendarEvents.length > 0 && (
                   <div>
                     <p className="text-xs font-semibold uppercase text-muted-foreground mb-1 flex items-center gap-1">
-                      <CalendarDays className="h-3 w-3" /> Connected Calendars
+                      <CalendarDays className="h-3 w-3" /> Events
                     </p>
                     <ul className="space-y-3">
                       {selectedCalendarEvents.map((e) => (
@@ -240,19 +283,19 @@ export default function CalendarPage() {
                             {`${format(new Date(e.startAt), "h:mm a")} – ${format(new Date(e.endAt), "h:mm a")}`}
                           </div>
                           <div className="text-xs text-muted-foreground">
-                            {e.provider}
+                            {e.provider === "manual" ? "Manual" : e.provider}
                             {e.category ? ` • ${e.category}` : ""}
                           </div>
+                          {(e as any).location && (
+                            <div className="text-xs text-muted-foreground truncate">
+                              📍 {(e as any).location}
+                            </div>
+                          )}
                           {e.description && (
                             <div className="text-xs text-muted-foreground truncate">
                               {e.description}
                             </div>
                           )}
-                          <div className="text-xs text-muted-foreground">
-                            {new Date(e.startAt).toDateString() === new Date(e.endAt).toDateString()
-                              ? "All day"
-                              : "Timed event"}
-                          </div>
                         </li>
                       ))}
                     </ul>
@@ -261,6 +304,69 @@ export default function CalendarPage() {
 
                 {selectedTasks.length === 0 && selectedCalendarEvents.length === 0 && (
                   <p className="text-sm text-muted-foreground">No events for this day</p>
+                )}
+
+                {!showAddForm ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full mt-2 gap-1.5"
+                    onClick={() => setShowAddForm(true)}
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Add event
+                  </Button>
+                ) : (
+                  <div className="mt-2 space-y-2 rounded-lg border p-3">
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-xs font-semibold uppercase text-muted-foreground">New Event</p>
+                      <button onClick={resetAddForm} className="text-muted-foreground hover:text-foreground">
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                    <Input
+                      placeholder="Event title"
+                      value={newEvent.title}
+                      onChange={(e) => setNewEvent((p) => ({ ...p, title: e.target.value }))}
+                      onKeyDown={(e) => e.key === "Enter" && handleAddEvent()}
+                      className="h-8 text-sm"
+                      autoFocus
+                    />
+                    <Input
+                      placeholder="Location (optional)"
+                      value={newEvent.location}
+                      onChange={(e) => setNewEvent((p) => ({ ...p, location: e.target.value }))}
+                      className="h-8 text-sm"
+                    />
+                    <div className="flex gap-2">
+                      <div className="flex-1">
+                        <p className="text-xs text-muted-foreground mb-1">Start</p>
+                        <Input
+                          type="time"
+                          value={newEvent.startTime}
+                          onChange={(e) => setNewEvent((p) => ({ ...p, startTime: e.target.value }))}
+                          className="h-8 text-sm"
+                        />
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-xs text-muted-foreground mb-1">End</p>
+                        <Input
+                          type="time"
+                          value={newEvent.endTime}
+                          onChange={(e) => setNewEvent((p) => ({ ...p, endTime: e.target.value }))}
+                          className="h-8 text-sm"
+                        />
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      className="w-full h-8"
+                      onClick={handleAddEvent}
+                      disabled={addingEvent || !newEvent.title.trim()}
+                    >
+                      {addingEvent ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Save"}
+                    </Button>
+                  </div>
                 )}
               </>
             )}
