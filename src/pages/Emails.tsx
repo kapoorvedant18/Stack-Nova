@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, type EmailRecord } from "@/lib/api";
+import { emailEvents } from "@/lib/emailEvents";
 import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -30,7 +31,19 @@ export default function Emails() {
   const [search, setSearch] = useState("");
   const [filterCategory, setFilterCategory] = useState("all");
 
-  const load = async () => {
+  // Lightweight fetch — used for interval, rollbacks, and cross-tab refresh
+  const fetchEmails = useCallback(async () => {
+    try {
+      const rows = await api.emails.list();
+      setEmails(rows || []);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to load emails";
+      toast.error(message);
+    }
+  }, []);
+
+  // Full sync + fetch — used only on initial mount
+  const load = useCallback(async () => {
     try {
       const syncCalls: Array<Promise<unknown>> = [];
 
@@ -57,21 +70,34 @@ export default function Emails() {
         await Promise.allSettled(syncCalls);
       }
 
-      const rows = await api.emails.list();
-      setEmails(rows || []);
+      await fetchEmails();
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to load emails";
       toast.error(message);
     }
-  };
+  }, [googleProviderToken, msProviderToken, fetchEmails]);
 
   useEffect(() => {
     if (!user) return;
-    load();
+    load(); // full sync on mount
 
-    const interval = window.setInterval(load, 60000);
-    return () => window.clearInterval(interval);
-  }, [user, googleProviderToken, msProviderToken]);
+    // Lightweight poll every 30s — just re-fetches from DB, no provider sync
+    const interval = window.setInterval(fetchEmails, 30000);
+
+    // Stay in sync with the Dashboard tab
+    const unsubDeleted = emailEvents.onDeleted((id) => {
+      setEmails((prev) => prev.filter((e) => e.id !== id));
+    });
+    const unsubRefresh = emailEvents.onRefresh(() => {
+      fetchEmails();
+    });
+
+    return () => {
+      window.clearInterval(interval);
+      unsubDeleted();
+      unsubRefresh();
+    };
+  }, [load, fetchEmails]);
 
   const resetForm = () => {
     setEditId(null);
@@ -111,7 +137,8 @@ export default function Emails() {
       }
       setOpen(false);
       resetForm();
-      load();
+      await fetchEmails();
+      emailEvents.emitRefresh();
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to save email";
       toast.error(message);
@@ -130,13 +157,19 @@ export default function Emails() {
   };
 
   const remove = async (id: string) => {
+    // Optimistic remove
+    setEmails((prev) => prev.filter((e) => e.id !== id));
+    // Tell Dashboard immediately
+    emailEvents.emitDeleted(id);
     try {
       await api.emails.delete(id);
       toast.success("Email deleted");
-      load();
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to delete email";
       toast.error(message);
+      // Roll back
+      fetchEmails();
+      emailEvents.emitRefresh();
     }
   };
 
