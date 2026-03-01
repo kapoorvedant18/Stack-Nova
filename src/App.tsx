@@ -20,6 +20,8 @@ import CalendarPage from "./pages/CalendarPage";
 import Notes from "./pages/Notes";
 import Links from "./pages/Links";
 import SettingsPage from "./pages/SettingsPage";
+import Emails from "./pages/Emails";
+import FilesPage from "./pages/FilesPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -77,6 +79,8 @@ const App = () => {
                   <Route path="/calendar" element={<CalendarPage />} />
                   <Route path="/notes" element={<Notes />} />
                   <Route path="/links" element={<Links />} />
+                  <Route path="/emails" element={<Emails />} />
+                  <Route path="/files" element={<FilesPage />} />
                   <Route path="/settings" element={<SettingsPage />} />
                 </Route>
                 <Route path="*" element={<NotFound />} />

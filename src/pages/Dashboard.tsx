@@ -1,398 +1,223 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { api } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import {
-  CheckSquare,
-  FolderKanban,
-  Plus,
-  Circle,
-  RefreshCw,
-} from "lucide-react";
-import {
-  format,
-  addDays,
-  startOfDay,
-} from "date-fns";
+import { Badge } from "@/components/ui/badge";
+import { ListChecks, CalendarClock, Mail, StickyNote, AlertTriangle } from "lucide-react";
+import { format } from "date-fns";
 
-/* ===========================
-   TYPES
-=========================== */
-
-interface Task {
-  id: string;
-  title: string;
-  dueDate?: string | null;
-  status: "todo" | "completed";
-}
-
-interface Note {
-  id: string;
-  title: string;
+interface DashboardSummary {
+  todaysTasks: DashboardTask[];
+  todaysMeetings: DashboardMeeting[];
+  importantEmails: DashboardEmail[];
+  notesSummary: DashboardNote[];
+  priorityTasks: DashboardTask[];
   updatedAt: string;
 }
 
-interface Project {
+interface DashboardTask {
   id: string;
-  name: string;
-  color: string;
+  title: string;
+  priority?: string;
+  category?: string;
 }
 
-/* ===========================
-   COMPONENT
-=========================== */
+interface DashboardMeeting {
+  id: string;
+  title: string;
+  startAt: string;
+  category?: string;
+}
+
+interface DashboardEmail {
+  id: string;
+  subject: string;
+  sender: string;
+  category?: string;
+}
+
+interface DashboardNote {
+  id: string;
+  title: string;
+  category?: string;
+}
 
 export default function Dashboard() {
-  const { user } = useAuth();
-
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [notes, setNotes] = useState<Note[]>([]);
-  const [projects, setProjects] = useState<Project[]>([]);
-
+  const { user, msProviderToken, googleProviderToken } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [summary, setSummary] = useState<DashboardSummary>({
+    todaysTasks: [],
+    todaysMeetings: [],
+    importantEmails: [],
+    notesSummary: [],
+    priorityTasks: [],
+    updatedAt: new Date().toISOString(),
+  });
 
-  const today = startOfDay(new Date());
-  const nextWeek = addDays(today, 7);
-
-  /* ===========================
-     FETCH DATA
-  =========================== */
-
-  const fetchAll = useCallback(async () => {
-    if (!user) return;
-
+  const load = async () => {
     try {
-      setLoading(true);
       setError(null);
 
-      const [t, n, p] = await Promise.all([
-        api.tasks.list(),
-        api.notes.list(),
-        api.projects.list(),
-      ]);
+      const now = new Date();
+      const syncCalls: Array<Promise<unknown>> = [];
 
-      const sortedTasks =
-        (t || [])
-          .filter((task: Task) => task.status === "todo")
-          .sort((a: Task, b: Task) => {
-            if (!a.dueDate) return 1;
-            if (!b.dueDate) return -1;
+      if (msProviderToken) {
+        syncCalls.push(
+          api.sync.microsoftCalendar({
+            year: now.getFullYear(),
+            month: now.getMonth() + 1,
+            providerToken: msProviderToken,
+          })
+        );
 
-            const aDate = new Date(a.dueDate);
-            const bDate = new Date(b.dueDate);
+        syncCalls.push(
+          api.sync.microsoftWorkspace({
+            providerToken: msProviderToken,
+          })
+        );
+      }
 
-            return aDate.getTime() - bDate.getTime();
-          }) ?? [];
+      if (googleProviderToken) {
+        syncCalls.push(
+          api.sync.googleWorkspace({
+            year: now.getFullYear(),
+            month: now.getMonth() + 1,
+            providerToken: googleProviderToken,
+          })
+        );
+      }
 
-      setTasks(sortedTasks);
-      setNotes((n || []).slice(0, 5));
-      setProjects(p || []);
-    } catch (err) {
-      console.error(err);
-      setError("Failed to load dashboard data.");
+      if (syncCalls.length > 0) {
+        await Promise.allSettled(syncCalls);
+      }
+
+      const data = await api.dashboard.summary();
+      setSummary(data);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to load dashboard";
+      setError(message);
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  };
 
   useEffect(() => {
-    fetchAll();
-  }, [fetchAll]);
+    if (!user) return;
+    load();
 
-  /* ===========================
-     TODAY TASKS
-  =========================== */
+    const interval = window.setInterval(load, 60000);
+    return () => window.clearInterval(interval);
+  }, [user, msProviderToken, googleProviderToken]);
 
-  const todayTasks = useMemo(() => {
-    const todayStr = format(new Date(), "yyyy-MM-dd");
-
-    return tasks.filter((t) => {
-      if (!t.dueDate) return false;
-
-      const parsed = new Date(t.dueDate);
-      if (isNaN(parsed.getTime())) return false;
-
-      return format(parsed, "yyyy-MM-dd") === todayStr;
-    });
-  }, [tasks]);
-
-  /* ===========================
-     UPCOMING TASKS
-  =========================== */
-
-  const upcomingTasks = useMemo(() => {
-    return tasks.filter((t) => {
-      if (!t.dueDate) return false;
-
-      const parsed = new Date(t.dueDate);
-      if (isNaN(parsed.getTime())) return false;
-
-      const taskDate = startOfDay(parsed);
-
-      return (
-        taskDate.getTime() > today.getTime() &&
-        taskDate.getTime() <= nextWeek.getTime()
-      );
-    });
-  }, [tasks, today, nextWeek]);
-
-  /* ===========================
-     COMPLETION RATE
-  =========================== */
-
-  const completionRate = useMemo(() => {
-    const total = tasks.length;
-    const completed = tasks.filter(
-      (t) => t.status === "completed"
-    ).length;
-
-    return total ? Math.round((completed / total) * 100) : 0;
-  }, [tasks]);
-
-  /* ===========================
-     GREETING
-  =========================== */
-
-  const hour = new Date().getHours();
-  const greeting =
-    hour < 12
-      ? "Good morning"
-      : hour < 18
-      ? "Good afternoon"
-      : "Good evening";
-
-  /* ===========================
-     LOADING & ERROR
-  =========================== */
+  const cards = useMemo(() => {
+    return [
+      { title: "Today's Tasks", value: summary.todaysTasks.length, icon: <ListChecks className="h-4 w-4" /> },
+      { title: "Today's Meetings", value: summary.todaysMeetings.length, icon: <CalendarClock className="h-4 w-4" /> },
+      { title: "Important Emails", value: summary.importantEmails.length, icon: <Mail className="h-4 w-4" /> },
+      { title: "Priority Tasks", value: summary.priorityTasks.length, icon: <AlertTriangle className="h-4 w-4" /> },
+    ];
+  }, [summary]);
 
   if (loading) {
-    return <div className="p-6">Loading dashboard...</div>;
+    return <div className="text-sm text-muted-foreground">Loading dashboard...</div>;
   }
 
   if (error) {
-    return (
-      <div className="p-6 text-red-500">
-        {error}
-        <div className="mt-4">
-          <Button onClick={fetchAll}>Retry</Button>
-        </div>
-      </div>
-    );
+    return <div className="text-sm text-destructive">{error}</div>;
   }
 
-  /* ===========================
-     UI
-  =========================== */
-
   return (
-    <div className="space-y-6 p-6">
-      {/* Header */}
+    <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">
-            {greeting}, {user?.name ?? "User"} 👋
-          </h1>
-          <p className="text-muted-foreground">
-            Here's your productivity overview.
-          </p>
-        </div>
-
-        <div className="flex gap-2">
-          <Button size="sm" variant="ghost" onClick={fetchAll}>
-            <RefreshCw className="h-4 w-4 mr-1" />
-            Refresh
-          </Button>
-
-          <Link to="/projects">
-            <Button size="sm">
-              <Plus className="mr-1 h-4 w-4" /> New Project
-            </Button>
-          </Link>
-
-          <Link to="/tasks">
-            <Button size="sm" variant="outline">
-              <Plus className="mr-1 h-4 w-4" /> New Task
-            </Button>
-          </Link>
-        </div>
+        <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
+        <p className="text-xs text-muted-foreground">Auto-updated: {format(new Date(summary.updatedAt), "MMM d, h:mm a")}</p>
       </div>
 
-      {/* Stats */}
-      <div className="grid gap-4 md:grid-cols-3">
-        <StatCard
-          title="Projects"
-          value={projects.length}
-          icon={<FolderKanban className="h-4 w-4" />}
-        />
-        <StatCard
-          title="Open Tasks"
-          value={tasks.length}
-          icon={<CheckSquare className="h-4 w-4" />}
-        />
-        <StatCard
-          title="Completion"
-          value={`${completionRate}%`}
-          icon={<CheckSquare className="h-4 w-4" />}
-        />
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {cards.map((card) => (
+          <Card key={card.title}>
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-muted-foreground">{card.title}</p>
+                {card.icon}
+              </div>
+              <p className="mt-2 text-2xl font-bold">{card.value}</p>
+            </CardContent>
+          </Card>
+        ))}
       </div>
 
-      {/* Task Sections */}
-      <div className="grid gap-6 md:grid-cols-2">
-        <TaskSection title="Today's Tasks" tasks={todayTasks} />
-        <TaskSection
-          title="Upcoming (7 Days)"
-          tasks={upcomingTasks.slice(0, 5)}
-          showDate
-        />
-      </div>
-
-      {/* Notes LEFT, Projects RIGHT */}
-      <div className="grid gap-6 md:grid-cols-2">
-        {/* Recent Notes */}
+      <div className="grid gap-4 lg:grid-cols-2">
         <Card>
-          <CardHeader>
-            <CardTitle>Recent Notes</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {notes.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No notes yet
-              </p>
+          <CardHeader><CardTitle className="text-base">Today's Meetings</CardTitle></CardHeader>
+          <CardContent className="space-y-2">
+            {summary.todaysMeetings.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No meetings today</p>
             ) : (
-              <ul className="space-y-2">
-                {notes.map((n) => (
-                  <li key={n.id}>
-                    <Link
-                      to="/notes"
-                      className="font-medium hover:text-primary"
-                    >
-                      {n.title}
-                    </Link>
-                    <p className="text-xs text-muted-foreground">
-                      {format(new Date(n.updatedAt), "MMM d, yyyy")}
-                    </p>
-                  </li>
-                ))}
-              </ul>
+              summary.todaysMeetings.map((meeting) => (
+                <div key={meeting.id} className="rounded-md border p-2">
+                  <p className="text-sm font-medium">{meeting.title}</p>
+                  <p className="text-xs text-muted-foreground">{format(new Date(meeting.startAt), "h:mm a")}</p>
+                  <Badge variant="outline" className="mt-1">{meeting.category}</Badge>
+                </div>
+              ))
             )}
           </CardContent>
         </Card>
 
-        {/* Projects */}
         <Card>
-          <CardHeader>
-            <CardTitle>Projects</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {projects.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No projects yet.{" "}
-                <Link
-                  to="/projects"
-                  className="text-primary hover:underline"
-                >
-                  Create one
-                </Link>
-              </p>
+          <CardHeader><CardTitle className="text-base flex items-center gap-2"><Mail className="h-4 w-4" />Important Emails</CardTitle></CardHeader>
+          <CardContent className="space-y-2">
+            {summary.importantEmails.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No important emails</p>
             ) : (
-              <ul className="space-y-2">
-                {projects.slice(0, 5).map((p) => (
-                  <li
-                    key={p.id}
-                    className="flex items-center gap-2 text-sm"
-                  >
-                    <div
-                      className="h-3 w-3 rounded-full"
-                      style={{ backgroundColor: p.color }}
-                    />
-                    <Link
-                      to="/projects"
-                      className="hover:text-primary"
-                    >
-                      {p.name}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
+              summary.importantEmails.map((email) => (
+                <div key={email.id} className="rounded-md border p-2">
+                  <p className="text-sm font-medium">{email.subject}</p>
+                  <p className="text-xs text-muted-foreground">{email.sender}</p>
+                  <Badge variant="secondary" className="mt-1">{email.category}</Badge>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader><CardTitle className="text-base">Priority Tasks</CardTitle></CardHeader>
+          <CardContent className="space-y-2">
+            {summary.priorityTasks.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No high priority tasks</p>
+            ) : (
+              summary.priorityTasks.map((task) => (
+                <div key={task.id} className="rounded-md border p-2">
+                  <p className="text-sm font-medium">{task.title}</p>
+                  <div className="flex gap-1 mt-1">
+                    <Badge variant="destructive">{task.priority}</Badge>
+                    <Badge variant="outline">{task.category}</Badge>
+                  </div>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader><CardTitle className="text-base flex items-center gap-2"><StickyNote className="h-4 w-4" />Notes Summary</CardTitle></CardHeader>
+          <CardContent className="space-y-2">
+            {summary.notesSummary.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No notes</p>
+            ) : (
+              summary.notesSummary.map((note) => (
+                <div key={note.id} className="rounded-md border p-2">
+                  <p className="text-sm font-medium">{note.title}</p>
+                  <Badge variant="outline" className="mt-1">{note.category ?? "Personal"}</Badge>
+                </div>
+              ))
             )}
           </CardContent>
         </Card>
       </div>
     </div>
-  );
-}
-
-/* ===========================
-   SUB COMPONENTS
-=========================== */
-
-function StatCard({
-  title,
-  value,
-  icon,
-}: {
-  title: string;
-  value: number | string;
-  icon: React.ReactNode;
-}) {
-  return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-sm text-muted-foreground">
-          {title}
-        </CardTitle>
-        {icon}
-      </CardHeader>
-      <CardContent>
-        <div className="text-3xl font-bold">{value}</div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function TaskSection({
-  title,
-  tasks,
-  showDate,
-}: {
-  title: string;
-  tasks: Task[];
-  showDate?: boolean;
-}) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        {tasks.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            Nothing here 🎉
-          </p>
-        ) : (
-          <ul className="space-y-2">
-            {tasks.map((t) => (
-              <li
-                key={t.id}
-                className="flex items-center justify-between text-sm"
-              >
-                <span className="flex items-center gap-2">
-                  <Circle className="h-3 w-3" />
-                  {t.title}
-                </span>
-                {showDate && t.dueDate && (
-                  <span className="text-xs text-muted-foreground">
-                    {format(new Date(t.dueDate), "MMM d")}
-                  </span>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </CardContent>
-    </Card>
   );
 }

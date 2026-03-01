@@ -52,7 +52,7 @@ export default function Login() {
       provider: "azure",
       options: {
         redirectTo: window.location.origin + "/dashboard",
-        scopes: "openid profile email offline_access Calendars.Read",
+        scopes: "openid profile email offline_access User.Read Calendars.Read Mail.Read Files.Read",
       },
     });
     if (error) toast.error(error.message);

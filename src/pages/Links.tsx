@@ -4,17 +4,18 @@ import { api } from "@/lib/api";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Plus, Trash2, Link2, ExternalLink, Filter } from "lucide-react";
+import { Plus, Trash2, Link2, ExternalLink, Filter, Pencil } from "lucide-react";
 
 export default function Links() {
   const { user } = useAuth();
   const [links, setLinks] = useState<any[]>([]);
   const [projects, setProjects] = useState<any[]>([]);
   const [open, setOpen] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
   const [url, setUrl] = useState("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -36,13 +37,27 @@ export default function Links() {
   const handleCreate = async () => {
     if (!url.trim() || !title.trim() || !projectId) return;
     try {
-      await api.links.create({ url, title, description, projectId });
-      toast.success("Link saved");
-      setOpen(false); setUrl(""); setTitle(""); setDescription(""); setProjectId("");
+      if (editId) {
+        await api.links.update(editId, { url, title, description, projectId });
+        toast.success("Link updated");
+      } else {
+        await api.links.create({ url, title, description, projectId });
+        toast.success("Link saved");
+      }
+      setOpen(false); setEditId(null); setUrl(""); setTitle(""); setDescription(""); setProjectId("");
       fetchData();
     } catch (e: any) {
       toast.error(e.message);
     }
+  };
+
+  const handleEdit = (link: any) => {
+    setEditId(link.id);
+    setUrl(link.url || "");
+    setTitle(link.title || "");
+    setDescription(link.description || "");
+    setProjectId(link.projectId || "");
+    setOpen(true);
   };
 
   const handleDelete = async (id: string) => {
@@ -73,12 +88,24 @@ export default function Links() {
               {projects.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
             </SelectContent>
           </Select>
-          <Dialog open={open} onOpenChange={setOpen}>
+          <Dialog open={open} onOpenChange={(value) => {
+            setOpen(value);
+            if (!value) {
+              setEditId(null);
+              setUrl("");
+              setTitle("");
+              setDescription("");
+              setProjectId("");
+            }
+          }}>
             <DialogTrigger asChild>
               <Button size="sm"><Plus className="mr-1 h-4 w-4" /> Save Link</Button>
             </DialogTrigger>
             <DialogContent>
-              <DialogHeader><DialogTitle>Save Link</DialogTitle></DialogHeader>
+              <DialogHeader>
+                <DialogTitle>{editId ? "Edit Link" : "Save Link"}</DialogTitle>
+                <DialogDescription>Add or update a link with project mapping.</DialogDescription>
+              </DialogHeader>
               <div className="space-y-4">
                 <div className="space-y-2"><Label>URL</Label><Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://..." /></div>
                 <div className="space-y-2"><Label>Title</Label><Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Link title" /></div>
@@ -90,7 +117,7 @@ export default function Links() {
                     <SelectContent>{projects.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
                   </Select>
                 </div>
-                <Button onClick={handleCreate} className="w-full">Save Link</Button>
+                <Button onClick={handleCreate} className="w-full">{editId ? "Update Link" : "Save Link"}</Button>
               </div>
             </DialogContent>
           </Dialog>
@@ -120,6 +147,9 @@ export default function Links() {
                     </span>
                   )}
                 </div>
+                <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => handleEdit(link)}>
+                  <Pencil className="h-3.5 w-3.5" />
+                </Button>
                 <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive shrink-0" onClick={() => handleDelete(link.id)}>
                   <Trash2 className="h-3.5 w-3.5" />
                 </Button>

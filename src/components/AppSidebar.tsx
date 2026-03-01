@@ -1,4 +1,4 @@
-import { LayoutDashboard, FolderKanban, CheckSquare, CalendarDays, StickyNote, Link2, Settings, LogOut, Zap, Moon, Sun } from "lucide-react";
+import { LayoutDashboard, FolderKanban, CheckSquare, CalendarDays, StickyNote, Link2, Settings, LogOut, Zap, Moon, Sun, Mail, FileText } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "@/hooks/useTheme";
@@ -13,6 +13,8 @@ const navItems = [
   { title: "Projects", url: "/projects", icon: FolderKanban },
   { title: "Tasks", url: "/tasks", icon: CheckSquare },
   { title: "Calendar", url: "/calendar", icon: CalendarDays },
+  { title: "Emails", url: "/emails", icon: Mail },
+  { title: "Files", url: "/files", icon: FileText },
   { title: "Notes", url: "/notes", icon: StickyNote },
   { title: "Links", url: "/links", icon: Link2 },
   { title: "Settings", url: "/settings", icon: Settings },
