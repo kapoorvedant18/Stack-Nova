@@ -50,6 +50,9 @@ export default function CalendarPage() {
     setLoadingMs(true);
 
     try {
+      const initialRows = await api.calendarEvents.list();
+      setCalendarEvents(initialRows || []);
+
       const syncCalls: Array<Promise<unknown>> = [];
 
       if (msProviderToken) {
