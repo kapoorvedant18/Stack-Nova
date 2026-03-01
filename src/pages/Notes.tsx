@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -29,6 +30,9 @@ interface Note {
   title: string;
   content?: string;
   projectId?: string;
+  category?: string;
+  tags?: string;
+  source?: string;
   updatedAt: string;
 }
 
@@ -50,7 +54,10 @@ export default function Notes() {
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [projectId, setProjectId] = useState("");
+  const [category, setCategory] = useState("Personal");
+  const [tags, setTags] = useState("");
   const [search, setSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("all");
 
   const fetchData = async () => {
     try {
@@ -74,28 +81,30 @@ export default function Notes() {
       toast.error("Title is required");
       return;
     }
-  
+
     try {
       let finalProjectId = projectId;
-  
-      // If no project selected, auto-assign first project
+
       if (!finalProjectId) {
         if (projects.length === 0) {
           toast.error("Create a project first");
           return;
         }
-        finalProjectId = projects[0].id; // fallback
+        finalProjectId = projects[0].id;
       }
-  
-      const payload = {
+
+      const payload: any = {
         title: title.trim(),
         projectId: finalProjectId,
+        category,
+        tags,
+        source: "Notes",
       };
-  
+
       if (content.trim()) {
         payload.content = content.trim();
       }
-  
+
       if (editId) {
         await api.notes.update(editId, payload);
         toast.success("Note updated");
@@ -103,7 +112,7 @@ export default function Notes() {
         await api.notes.create(payload);
         toast.success("Note created");
       }
-  
+
       setOpen(false);
       resetForm();
       fetchData();
@@ -127,6 +136,8 @@ export default function Notes() {
     setTitle(n.title);
     setContent(n.content || "");
     setProjectId(n.projectId || "");
+    setCategory(n.category || "Personal");
+    setTags(n.tags || "");
     setOpen(true);
   };
 
@@ -135,11 +146,14 @@ export default function Notes() {
     setTitle("");
     setContent("");
     setProjectId("");
+    setCategory("Personal");
+    setTags("");
   };
 
   const filtered = notes.filter((n) =>
-    n.title.toLowerCase().includes(search.toLowerCase()) ||
-    (n.content || "").toLowerCase().includes(search.toLowerCase())
+    (n.title.toLowerCase().includes(search.toLowerCase()) ||
+      (n.content || "").toLowerCase().includes(search.toLowerCase())) &&
+    (categoryFilter === "all" || n.category === categoryFilter)
   );
 
   const projectMap = Object.fromEntries(
@@ -162,6 +176,7 @@ export default function Notes() {
           <DialogContent>
             <DialogHeader>
               <DialogTitle>{editId ? "Edit Note" : "New Note"}</DialogTitle>
+              <DialogDescription>Create or update note details and project assignment.</DialogDescription>
             </DialogHeader>
 
             <div className="space-y-4">
@@ -191,6 +206,29 @@ export default function Notes() {
                 <Textarea value={content} onChange={(e) => setContent(e.target.value)} rows={6} />
               </div>
 
+              <div>
+                <Label>Category</Label>
+                <Select value={category} onValueChange={setCategory}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Work">Work</SelectItem>
+                    <SelectItem value="Study">Study</SelectItem>
+                    <SelectItem value="Personal">Personal</SelectItem>
+                    <SelectItem value="Meetings">Meetings</SelectItem>
+                    <SelectItem value="Projects">Projects</SelectItem>
+                    <SelectItem value="Today">Today</SelectItem>
+                    <SelectItem value="Upcoming">Upcoming</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label>Tags (comma separated)</Label>
+                <Input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="ideas,design,client" />
+              </div>
+
               <Button onClick={handleSave} className="w-full">
                 {editId ? "Update" : "Create"}
               </Button>
@@ -208,6 +246,22 @@ export default function Notes() {
           className="pl-9"
         />
       </div>
+
+      <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+        <SelectTrigger>
+          <SelectValue placeholder="Filter by category" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">All categories</SelectItem>
+          <SelectItem value="Work">Work Notes</SelectItem>
+          <SelectItem value="Study">Study Notes</SelectItem>
+          <SelectItem value="Personal">Personal Notes</SelectItem>
+          <SelectItem value="Projects">Project Notes</SelectItem>
+          <SelectItem value="Meetings">Meeting Notes</SelectItem>
+          <SelectItem value="Today">Today</SelectItem>
+          <SelectItem value="Upcoming">Upcoming</SelectItem>
+        </SelectContent>
+      </Select>
 
       {filtered.length === 0 ? (
         <Card>
@@ -243,6 +297,8 @@ export default function Notes() {
                   {note.projectId && projectMap[note.projectId]?.name}
                   {" • "}
                   {format(new Date(note.updatedAt), "MMM d")}
+                  {note.category ? ` • ${note.category}` : ""}
+                  {note.tags ? ` • #${note.tags.split(",").map((tag) => tag.trim()).filter(Boolean).join(" #")}` : ""}
                 </div>
               </CardContent>
             </Card>

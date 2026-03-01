@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -36,6 +37,10 @@ interface Task {
   status: "todo" | "completed";
   dueDate?: string | null;
   projectId?: string | null;
+  category?: string;
+  tags?: string;
+  priority?: "low" | "medium" | "high";
+  source?: string;
 }
 
 interface Project {
@@ -148,11 +153,17 @@ export default function Tasks() {
   const [title, setTitle] = useState("");
   const [dueDate, setDueDate] = useState(""); // YYYY-MM-DD internally
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [category, setCategory] = useState("Personal");
+  const [tags, setTags] = useState("");
+  const [priority, setPriority] = useState<"low" | "medium" | "high">("medium");
   const [filterProject, setFilterProject] = useState("all");
 
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameId, setRenameId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [renameCategory, setRenameCategory] = useState("Personal");
+  const [renameTags, setRenameTags] = useState("");
+  const [renamePriority, setRenamePriority] = useState<"low" | "medium" | "high">("medium");
 
   const fetchData = async () => {
     try {
@@ -172,6 +183,9 @@ export default function Tasks() {
     setTitle("");
     setDueDate("");
     setSelectedProjectId(null);
+    setCategory("Personal");
+    setTags("");
+    setPriority("medium");
   };
 
   const handleCreate = async () => {
@@ -181,8 +195,12 @@ export default function Tasks() {
     }
 
     try {
-      const payload: { title: string; projectId?: string; dueDate?: string } = {
+      const payload: { title: string; projectId?: string; dueDate?: string; category: string; tags: string; priority: "low" | "medium" | "high"; source: string } = {
         title: title.trim(),
+        category,
+        tags,
+        priority,
+        source: "Manual",
       };
 
       if (selectedProjectId) {
@@ -213,8 +231,13 @@ export default function Tasks() {
   const handleRename = async () => {
     if (!renameId || !renameValue.trim()) return;
     try {
-      await api.tasks.update(renameId, { title: renameValue.trim() });
-      toast.success("Task renamed");
+      await api.tasks.update(renameId, {
+        title: renameValue.trim(),
+        category: renameCategory,
+        tags: renameTags,
+        priority: renamePriority,
+      });
+      toast.success("Task updated");
       setRenameOpen(false);
       fetchData();
     } catch (e: any) {
@@ -283,6 +306,7 @@ export default function Tasks() {
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>New Task</DialogTitle>
+                <DialogDescription>Create a task with optional project and due date.</DialogDescription>
               </DialogHeader>
 
               <div className="space-y-4">
@@ -327,6 +351,43 @@ export default function Tasks() {
                     <span className="text-xs text-muted-foreground font-normal">(optional)</span>
                   </Label>
                   <DateInput value={dueDate} onChange={setDueDate} />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Category</Label>
+                  <Select value={category} onValueChange={setCategory}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Work">Work</SelectItem>
+                      <SelectItem value="Study">Study</SelectItem>
+                      <SelectItem value="Personal">Personal</SelectItem>
+                      <SelectItem value="Meetings">Meetings</SelectItem>
+                      <SelectItem value="Projects">Projects</SelectItem>
+                      <SelectItem value="Today">Today</SelectItem>
+                      <SelectItem value="Upcoming">Upcoming</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Tags (comma separated)</Label>
+                  <Input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="client,urgent" />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Priority</Label>
+                  <Select value={priority} onValueChange={(value) => setPriority(value as "low" | "medium" | "high")}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Priority" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="low">low</SelectItem>
+                      <SelectItem value="medium">medium</SelectItem>
+                      <SelectItem value="high">high</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 <Button onClick={handleCreate} className="w-full">
@@ -374,6 +435,9 @@ export default function Tasks() {
                     {task.dueDate && (
                       <span>{format(new Date(task.dueDate + "T00:00:00"), "dd/MM/yyyy")}</span>
                     )}
+                    {task.category && <span>• {task.category}</span>}
+                    {task.priority && <span>• {task.priority}</span>}
+                    {task.tags && <span>• #{task.tags.split(",").map((tag) => tag.trim()).filter(Boolean).join(" #")}</span>}
                   </div>
                 </div>
 
@@ -384,8 +448,15 @@ export default function Tasks() {
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => { setRenameId(task.id); setRenameValue(task.title); setRenameOpen(true); }}>
-                      <Pencil className="mr-2 h-4 w-4" /> Rename
+                    <DropdownMenuItem onClick={() => {
+                      setRenameId(task.id);
+                      setRenameValue(task.title);
+                      setRenameCategory(task.category ?? "Personal");
+                      setRenameTags(task.tags ?? "");
+                      setRenamePriority((task.priority as "low" | "medium" | "high") ?? "medium");
+                      setRenameOpen(true);
+                    }}>
+                      <Pencil className="mr-2 h-4 w-4" /> Edit
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => handleDelete(task.id)} className="text-destructive">
                       <Trash2 className="mr-2 h-4 w-4" /> Delete
@@ -401,7 +472,10 @@ export default function Tasks() {
       {/* Rename Dialog */}
       <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Rename Task</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>Edit Task</DialogTitle>
+            <DialogDescription>Update task title, category, tags, and priority.</DialogDescription>
+          </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
               <Label>Title</Label>
@@ -410,6 +484,40 @@ export default function Tasks() {
                 onChange={(e) => setRenameValue(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleRename()}
               />
+            </div>
+            <div className="space-y-2">
+              <Label>Category</Label>
+              <Select value={renameCategory} onValueChange={setRenameCategory}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Category" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Work">Work</SelectItem>
+                  <SelectItem value="Study">Study</SelectItem>
+                  <SelectItem value="Personal">Personal</SelectItem>
+                  <SelectItem value="Meetings">Meetings</SelectItem>
+                  <SelectItem value="Projects">Projects</SelectItem>
+                  <SelectItem value="Today">Today</SelectItem>
+                  <SelectItem value="Upcoming">Upcoming</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Tags</Label>
+              <Input value={renameTags} onChange={(e) => setRenameTags(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>Priority</Label>
+              <Select value={renamePriority} onValueChange={(value) => setRenamePriority(value as "low" | "medium" | "high")}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Priority" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="low">low</SelectItem>
+                  <SelectItem value="medium">medium</SelectItem>
+                  <SelectItem value="high">high</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <Button onClick={handleRename} className="w-full">Save Changes</Button>
           </div>
