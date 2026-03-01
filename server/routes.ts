@@ -54,16 +54,110 @@ function eventDateToIso(value?: string): string | null {
   return date.toISOString();
 }
 
-async function ensureAutoSyncProject(userId: string): Promise<string> {
-  const rows = await storage.getProjects(userId);
-  const existing = rows.find((project) => project.name === "Auto Sync");
-  if (existing) return existing.id;
-  const project = await storage.createProject({
-    userId,
-    name: "Auto Sync",
-    color: "#6366f1",
-  });
-  return project.id;
+type ProjectSeed = { name: string; color: string };
+
+const SYNC_PROJECT_ALIASES: Array<{ pattern: RegExp; name: string; color: string }> = [
+  { pattern: /\bgsoc\b|\bgoogle\s*summer\s*of\s*code\b/i, name: "GSOC", color: "#3b82f6" },
+  { pattern: /\bzulip\b/i, name: "Zulip", color: "#8b5cf6" },
+  { pattern: /\bgithub\b|\bgh\b/i, name: "GitHub", color: "#111827" },
+  { pattern: /\bgitlab\b/i, name: "GitLab", color: "#f97316" },
+  { pattern: /\bhackathon\b|\bopen\s*source\b|\bopensource\b/i, name: "Open Source", color: "#10b981" },
+  { pattern: /\bintern(ship)?\b/i, name: "Internship", color: "#06b6d4" },
+  { pattern: /\bstartup\b|\bpitch\b|\bfundraising\b/i, name: "Startup", color: "#ec4899" },
+];
+
+const GENERIC_PROJECT_TERMS = new Set([
+  "project",
+  "projects",
+  "task",
+  "tasks",
+  "todo",
+  "email",
+  "emails",
+  "calendar",
+  "meeting",
+  "meetings",
+  "work",
+  "personal",
+  "study",
+  "today",
+  "upcoming",
+  "important",
+  "urgent",
+  "manual",
+]);
+
+function toDisplayProjectName(raw: string): string {
+  const cleaned = raw
+    .replace(/[^a-zA-Z0-9\s_-]/g, " ")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!cleaned) return "General";
+  if (cleaned.length <= 5) return cleaned.toUpperCase();
+
+  return cleaned
+    .split(" ")
+    .map((word) => (word ? `${word[0].toUpperCase()}${word.slice(1).toLowerCase()}` : ""))
+    .join(" ");
+}
+
+function inferProjectSeed(params: {
+  title?: string;
+  description?: string;
+  tags?: string[];
+  source?: string;
+  provider?: string;
+}): ProjectSeed {
+  const title = params.title ?? "";
+  const description = params.description ?? "";
+  const tags = params.tags ?? [];
+  const combined = `${title} ${description} ${tags.join(" ")}`.toLowerCase();
+
+  for (const alias of SYNC_PROJECT_ALIASES) {
+    if (alias.pattern.test(combined)) {
+      return { name: alias.name, color: alias.color };
+    }
+  }
+
+  for (const tag of tags) {
+    const normalized = tag.trim().toLowerCase();
+    if (!normalized || normalized.startsWith("project:")) continue;
+    if (GENERIC_PROJECT_TERMS.has(normalized)) continue;
+    return { name: toDisplayProjectName(normalized), color: "#6366f1" };
+  }
+
+  if ((params.provider ?? "").toLowerCase().includes("google")) {
+    return { name: "Google Workspace", color: "#4285f4" };
+  }
+  if ((params.provider ?? "").toLowerCase().includes("microsoft") || (params.provider ?? "").toLowerCase().includes("outlook")) {
+    return { name: "Microsoft Workspace", color: "#2563eb" };
+  }
+  if ((params.source ?? "").toLowerCase().includes("calendar")) {
+    return { name: "Calendar", color: "#f59e0b" };
+  }
+
+  return { name: "General", color: "#6366f1" };
+}
+
+async function createSyncProjectResolver(userId: string): Promise<(seed: ProjectSeed) => Promise<string>> {
+  const existingProjects = await storage.getProjects(userId);
+  const projectByName = new Map(existingProjects.map((project) => [project.name.toLowerCase(), project]));
+
+  return async (seed: ProjectSeed): Promise<string> => {
+    const normalized = seed.name.trim().toLowerCase();
+    const existing = projectByName.get(normalized);
+    if (existing) return existing.id;
+
+    const created = await storage.createProject({
+      userId,
+      name: seed.name.trim() || "General",
+      color: seed.color || "#6366f1",
+    });
+    projectByName.set(created.name.toLowerCase(), created);
+    return created.id;
+  };
 }
 
 router.get("/projects", async (req: Request, res: Response) => {
@@ -492,10 +586,10 @@ router.post("/sync/microsoft/calendar", async (req: Request, res: Response) => {
       }
     }
 
+    const resolveProjectId = await createSyncProjectResolver(userId);
     let tasksCreated = 0;
     const actionableEvents = msEvents.filter((event) => shouldCreateTaskFromText(event.subject ?? ""));
     if (actionableEvents.length > 0) {
-      const projectId = await ensureAutoSyncProject(userId);
       const existingTasks = await storage.getTasks(userId);
 
       for (const event of actionableEvents) {
@@ -511,6 +605,16 @@ router.post("/sync/microsoft/calendar", async (req: Request, res: Response) => {
           description: event.bodyPreview ?? "",
           source: "Calendar",
         });
+
+        const projectId = await resolveProjectId(
+          inferProjectSeed({
+            title,
+            description: event.bodyPreview ?? "",
+            tags: categoryResult.tags,
+            source: "Calendar",
+            provider: "microsoft",
+          })
+        );
 
         const createdTask = await storage.createTask({
           userId,
@@ -764,7 +868,7 @@ router.post("/sync/google/workspace", async (req: Request, res: Response) => {
       }
     }
 
-    const autoSyncProjectId = await ensureAutoSyncProject(userId);
+    const resolveProjectId = await createSyncProjectResolver(userId);
     let tasksCreated = 0;
 
     for (const row of gmailRows) {
@@ -783,9 +887,19 @@ router.post("/sync/google/workspace", async (req: Request, res: Response) => {
       });
       if (!triaged.keep) continue;
 
+      const projectId = await resolveProjectId(
+        inferProjectSeed({
+          title: row.subject,
+          description: row.snippet,
+          tags: triaged.tags,
+          source: "Email",
+          provider: "gmail",
+        })
+      );
+
       const createdTask = await storage.createTask({
         userId,
-        projectId: autoSyncProjectId,
+        projectId,
         title: row.subject,
         description: row.snippet,
         dueDate,
@@ -967,7 +1081,7 @@ router.post("/sync/microsoft/workspace", async (req: Request, res: Response) => 
       }
     }
 
-    const autoSyncProjectId = await ensureAutoSyncProject(userId);
+    const resolveProjectId = await createSyncProjectResolver(userId);
     let tasksCreated = 0;
     for (const row of mailRows) {
       const subject = row.subject || "(no subject)";
@@ -987,9 +1101,20 @@ router.post("/sync/microsoft/workspace", async (req: Request, res: Response) => 
         provider: "outlook",
       });
       if (!triaged.keep) continue;
+
+      const projectId = await resolveProjectId(
+        inferProjectSeed({
+          title: subject,
+          description: bodySummary,
+          tags: triaged.tags,
+          source: "Email",
+          provider: "outlook",
+        })
+      );
+
       const createdTask = await storage.createTask({
         userId,
-        projectId: autoSyncProjectId,
+        projectId,
         title: subject,
         description: bodySummary,
         dueDate,
