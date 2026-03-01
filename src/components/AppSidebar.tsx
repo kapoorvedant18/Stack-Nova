@@ -34,7 +34,7 @@ export function AppSidebar() {
             <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-primary-foreground">
               <Zap className="h-4 w-4" />
             </div>
-            {!collapsed && <span className="text-base font-semibold text-foreground">Workspace</span>}
+            {!collapsed && <span className="text-base font-semibold text-foreground">Mind Sync</span>}
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
