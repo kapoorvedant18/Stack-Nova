@@ -19,7 +19,7 @@ interface DashboardSummary {
 }
 interface DashboardTask    { id: string; title: string; priority?: string; category?: string; }
 interface DashboardMeeting { id: string; title: string; startAt: string;  category?: string; }
-interface DashboardEmail   { id: string; subject: string; sender: string; category?: string; }
+interface DashboardEmail   { id: string; subject: string; sender: string; category?: string; tags?: string; }
 interface DashboardNote    { id: string; title: string; category?: string; }
 
 // Masonry layout with a pinned item.
