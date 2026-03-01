@@ -39,7 +39,17 @@ export default function FilesPage() {
   const [search, setSearch] = useState("");
   const [filterCategory, setFilterCategory] = useState("all");
 
-  const load = async () => {
+  const fetchFiles = async () => {
+    try {
+      const data = await api.files.list();
+      setRows(data || []);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to load files";
+      toast.error(message);
+    }
+  };
+
+  const runProviderSync = async () => {
     try {
       const syncCalls: Array<Promise<unknown>> = [];
 
@@ -66,20 +76,27 @@ export default function FilesPage() {
         await Promise.allSettled(syncCalls);
       }
 
-      const data = await api.files.list();
-      setRows(data || []);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to load files";
-      toast.error(message);
+      await fetchFiles();
+    } catch {
+      // keep page responsive if provider sync fails
     }
+  };
+
+  const load = async () => {
+    await fetchFiles();
   };
 
   useEffect(() => {
     if (!user) return;
-    load();
+    fetchFiles();
+    runProviderSync();
 
-    const interval = window.setInterval(load, 60000);
-    return () => window.clearInterval(interval);
+    const interval = window.setInterval(fetchFiles, 30000);
+    const syncInterval = window.setInterval(runProviderSync, 180000);
+    return () => {
+      window.clearInterval(interval);
+      window.clearInterval(syncInterval);
+    };
   }, [user, googleProviderToken, msProviderToken]);
 
   const resetForm = () => {

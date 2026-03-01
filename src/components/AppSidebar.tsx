@@ -56,6 +56,7 @@ export function AppSidebar() {
     <Sidebar collapsible="icon">
       <SidebarContent>
         <SidebarGroup>
+<<<<<<< HEAD
        <SidebarGroupLabel className="flex items-center gap-2 px-3 py-4">
 
   <img
@@ -72,6 +73,14 @@ export function AppSidebar() {
 
 </SidebarGroupLabel>
 
+=======
+          <SidebarGroupLabel className="flex items-center gap-2 px-3 py-4">
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+              <Zap className="h-4 w-4" />
+            </div>
+            {!collapsed && <span className="text-base font-semibold text-foreground">Mind Sync</span>}
+          </SidebarGroupLabel>
+>>>>>>> bbacf4e5690cb2a5710b7cf73aa5db11bfe522db
           <SidebarGroupContent>
             <SidebarMenu>
               {navItems.map((item) => (
