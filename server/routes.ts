@@ -463,25 +463,35 @@ router.post("/calendar-events", async (req: Request, res: Response) => {
   const userId = getUserId(req);
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
-  const payload = { ...req.body, userId };
+  const body = req.body;
+  if (!body.title || !body.startAt || !body.endAt || !body.provider || !body.externalId) {
+    return res.status(400).json({ error: "Missing required fields: title, startAt, endAt, provider, externalId" });
+  }
+
   const categorized = await categorizeItem({
-    title: payload.title ?? "",
-    description: payload.description ?? "",
+    title: body.title ?? "",
+    description: body.description ?? "",
     source: "Calendar",
   });
 
-  const parsed = insertCalendarEventSchema.safeParse({
-    ...payload,
-    category: payload.category ?? categorized.category,
-    tags: payload.tags ?? categorized.tags.join(","),
-    source: payload.source ?? "Calendar",
-  });
-  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-
   try {
-    const calendarEvent = await storage.createCalendarEvent(parsed.data);
+    const calendarEvent = await storage.createCalendarEvent({
+      userId,
+      externalId: body.externalId,
+      provider: body.provider,
+      title: body.title,
+      description: body.description ?? "",
+      location: body.location ?? "",
+      isAllDay: body.isAllDay ?? false,
+      startAt: new Date(body.startAt),
+      endAt: new Date(body.endAt),
+      category: body.category ?? categorized.category,
+      tags: body.tags ?? categorized.tags.join(","),
+      source: body.source ?? "Calendar",
+    });
     res.status(201).json(calendarEvent);
-  } catch {
+  } catch (e) {
+    console.error("[calendar-events POST]", e);
     res.status(500).json({ error: "Failed to create calendar event" });
   }
 });
@@ -701,6 +711,7 @@ router.post("/sync/google/workspace", async (req: Request, res: Response) => {
       storage.getTasks(userId),
     ]);
 
+    const deletedEmailKeys = await storage.getDeletedEmailKeys(userId);
     const emailMap = new Map(
       existingEmails
         .filter((item) => item.provider === "gmail")
@@ -754,6 +765,7 @@ router.post("/sync/google/workspace", async (req: Request, res: Response) => {
       };
 
       const key = `${payload.externalId}::${payload.provider}`;
+      if (deletedEmailKeys.has(key)) { emailsSkipped += 1; continue; }
       const existing = emailMap.get(key);
       if (existing) {
         await storage.updateEmail(existing.id, userId, {
@@ -976,6 +988,7 @@ router.post("/sync/microsoft/workspace", async (req: Request, res: Response) => 
       storage.getTasks(userId),
     ]);
 
+    const deletedEmailKeys = await storage.getDeletedEmailKeys(userId);
     const emailMap = new Map(
       existingEmails
         .filter((item) => item.provider === "outlook")
@@ -1022,6 +1035,7 @@ router.post("/sync/microsoft/workspace", async (req: Request, res: Response) => 
       };
 
       const key = `${payload.externalId}::${payload.provider}`;
+      if (deletedEmailKeys.has(key)) { emailsSkipped += 1; continue; }
       const existing = emailMap.get(key);
       if (existing) {
         await storage.updateEmail(existing.id, userId, {

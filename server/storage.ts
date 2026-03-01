@@ -1,6 +1,6 @@
 import { db } from "./db";
 import { projects, tasks, notes, links, emails, calendarEvents, files, customTags } from "../shared/schema";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, isNull, isNotNull } from "drizzle-orm";
 import type {
   Project,
   InsertProject,
@@ -45,6 +45,7 @@ export interface IStorage {
   createEmail(data: InsertEmail): Promise<Email>;
   updateEmail(id: string, userId: string, data: Partial<InsertEmail>): Promise<Email | null>;
   deleteEmail(id: string, userId: string): Promise<boolean>;
+  getDeletedEmailKeys(userId: string): Promise<Set<string>>;
 
   getCalendarEvents(userId: string): Promise<CalendarEvent[]>;
   createCalendarEvent(data: InsertCalendarEvent): Promise<CalendarEvent>;
@@ -158,7 +159,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getEmails(userId: string): Promise<Email[]> {
-    return this.database.select().from(emails).where(eq(emails.userId, userId)).orderBy(desc(emails.receivedAt));
+return this.database.select().from(emails).where(and(eq(emails.userId, userId), isNull(emails.deletedAt))).orderBy(desc(emails.receivedAt));
   }
 
   async createEmail(data: InsertEmail): Promise<Email> {
@@ -176,8 +177,20 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteEmail(id: string, userId: string): Promise<boolean> {
-    const result = await this.database.delete(emails).where(and(eq(emails.id, id), eq(emails.userId, userId))).returning();
+    const result = await this.database
+      .update(emails)
+      .set({ deletedAt: new Date() })
+      .where(and(eq(emails.id, id), eq(emails.userId, userId), isNull(emails.deletedAt)))
+      .returning();
     return result.length > 0;
+  }
+
+  async getDeletedEmailKeys(userId: string): Promise<Set<string>> {
+const rows = await this.database
+      .select({ externalId: emails.externalId, provider: emails.provider })
+      .from(emails)
+      .where(and(eq(emails.userId, userId), isNotNull(emails.deletedAt)));
+    return new Set(rows.map((r) => `${r.externalId}::${r.provider}`));
   }
 
   async getCalendarEvents(userId: string): Promise<CalendarEvent[]> {
@@ -391,7 +404,7 @@ export class MemoryStorage implements IStorage {
 
   async getEmails(userId: string): Promise<Email[]> {
     return this.emailRows
-      .filter((row) => row.userId === userId)
+      .filter((row) => row.userId === userId && !row.deletedAt)
       .sort((left, right) => new Date(right.receivedAt as unknown as string).getTime() - new Date(left.receivedAt as unknown as string).getTime());
   }
 
@@ -415,9 +428,18 @@ export class MemoryStorage implements IStorage {
   }
 
   async deleteEmail(id: string, userId: string): Promise<boolean> {
-    const before = this.emailRows.length;
-    this.emailRows = this.emailRows.filter((item) => !(item.id === id && item.userId === userId));
-    return this.emailRows.length < before;
+    const row = this.emailRows.find((item) => item.id === id && item.userId === userId && !item.deletedAt);
+    if (!row) return false;
+    (row as any).deletedAt = new Date();
+    return true;
+  }
+
+  async getDeletedEmailKeys(userId: string): Promise<Set<string>> {
+    return new Set(
+      this.emailRows
+        .filter((row) => row.userId === userId && row.deletedAt)
+        .map((row) => `${row.externalId}::${row.provider}`)
+    );
   }
 
   async getCalendarEvents(userId: string): Promise<CalendarEvent[]> {
@@ -605,6 +627,10 @@ class ResilientStorage implements IStorage {
 
   deleteEmail(id: string, userId: string): Promise<boolean> {
     return this.run("deleteEmail", (storage) => storage.deleteEmail(id, userId));
+  }
+
+  getDeletedEmailKeys(userId: string): Promise<Set<string>> {
+    return this.run("getDeletedEmailKeys", (storage) => storage.getDeletedEmailKeys(userId));
   }
 
   getCalendarEvents(userId: string): Promise<CalendarEvent[]> {
